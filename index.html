@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <title>Classroom Visualiser</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="manifest" href="manifest.json" />
   <style>
     html, body {
       height: 100%;
@@ -77,9 +76,10 @@
     }
 
     #controls label { display: block; margin: 8px 0 4px; }
-    #controls input[type="range"],
-    #controls input[type="color"],
-    #controls select { width: 100%; box-sizing: border-box; }
+    #controls input[type="range"], #controls input[type="color"], #controls select {
+      width: 100%;
+      box-sizing: border-box;
+    }
   </style>
 </head>
 <body>
@@ -93,9 +93,6 @@
 
   <div id="control-toggle">▲</div>
   <div id="controls" aria-hidden="true">
-    <label for="cameraSelect">Camera</label>
-    <select id="cameraSelect"></select>
-
     <label for="tintColor">Tint colour</label>
     <input type="color" id="tintColor" value="#ff69b4">
 
@@ -118,13 +115,10 @@
     const tintColor = document.getElementById('tintColor');
     const tintOpacity = document.getElementById('tintOpacity');
     const rotation = document.getElementById('rotation');
-    const cameraSelect = document.getElementById('cameraSelect');
 
-    // Restore saved settings
     const savedColor = localStorage.getItem('tintColor');
     const savedOpacity = localStorage.getItem('tintOpacity');
     const savedRotation = localStorage.getItem('rotation');
-    const savedCameraId = localStorage.getItem('cameraId');
     if (savedColor) tintColor.value = savedColor;
     if (savedOpacity) tintOpacity.value = savedOpacity;
     if (savedRotation) rotation.value = savedRotation;
@@ -132,14 +126,21 @@
     function hexToRgba(hex, alpha) {
       if (!hex) return `rgba(255,105,180,${alpha})`;
       const h = hex.replace('#','');
-      const r = parseInt(h.length===3 ? h[0]+h[0] : h.slice(0,2),16);
-      const g = parseInt(h.length===3 ? h[1]+h[1] : h.slice(2,4),16);
-      const b = parseInt(h.length===3 ? h[2]+h[2] : h.slice(4,6),16);
-      return `rgba(${r},${g},${b},${alpha})`;
+      if (h.length === 3) {
+        const r = parseInt(h[0]+h[0],16);
+        const g = parseInt(h[1]+h[1],16);
+        const b = parseInt(h[2]+h[2],16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      } else {
+        const r = parseInt(h.slice(0,2),16);
+        const g = parseInt(h.slice(2,4),16);
+        const b = parseInt(h.slice(4,6),16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
     }
 
     function updateOverlay() {
-      const a = (parseInt(tintOpacity.value,10)||0)/100;
+      const a = (parseInt(tintOpacity.value, 10) || 0) / 100;
       overlay.style.background = hexToRgba(tintColor.value, a);
     }
 
@@ -160,24 +161,28 @@
     });
 
     function applyTransform() {
-      const deg = parseInt(rotation.value,10)||0;
+      const deg = parseInt(rotation.value, 10) || 0;
       let vw = video.videoWidth || 0;
       let vh = video.videoHeight || 0;
 
-      if ((!vw||!vh) && video.srcObject && video.srcObject.getVideoTracks) {
+      if ((!vw || !vh) && video.srcObject && video.srcObject.getVideoTracks) {
         try {
           const s = video.srcObject.getVideoTracks()[0].getSettings();
-          if (s && s.width && s.height) { vw = s.width; vh = s.height; }
-        } catch(e){ }
+          if (s && s.width && s.height) {
+            vw = s.width;
+            vh = s.height;
+          }
+        } catch {}
       }
       if (!vw || !vh) return;
 
-      wrapper.style.width = vw+'px';
-      wrapper.style.height = vh+'px';
+      wrapper.style.width = vw + 'px';
+      wrapper.style.height = vh + 'px';
 
       const W = window.innerWidth;
       const H = window.innerHeight;
-      const scale = Math.max(W/vw, H/vh);
+      const scale = Math.max(W / vw, H / vh);
+
       wrapper.style.transform = `translate(-50%,-50%) rotate(${deg}deg) scale(${scale})`;
     }
 
@@ -186,71 +191,45 @@
       applyTransform();
     });
 
-    async function initCamera(deviceId) {
+    async function initCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: deviceId ? { exact: deviceId } : undefined, width:{ideal:3840}, height:{ideal:2160} },
+          video: { width: { ideal: 9999 }, height: { ideal: 9999 }, frameRate: { ideal: 30 } },
           audio: false
         });
         video.srcObject = stream;
+
+        const track = stream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        console.log(`Camera chosen: ${settings.width}x${settings.height} @ ${settings.frameRate || 'unknown'}fps`);
+
         video.addEventListener('loadedmetadata', () => {
           video.play().catch(()=>{});
           applyTransform();
-        }, { once:true });
-      } catch(err) {
+        });
+      } catch (err) {
         console.error('Camera error', err);
         alert('Error accessing camera: ' + (err && err.name ? err.name : err));
       }
     }
 
-    async function populateCameras() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d=>d.kind==='videoinput');
-      cameraSelect.innerHTML = '';
-      videoDevices.forEach((d,i)=>{
-        const opt = document.createElement('option');
-        opt.value = d.deviceId;
-        opt.text = d.label||`Camera ${i+1}`;
-        cameraSelect.appendChild(opt);
-      });
-      if (savedCameraId && videoDevices.some(d=>d.deviceId===savedCameraId)) {
-        cameraSelect.value = savedCameraId;
-        initCamera(savedCameraId);
-      } else {
-        initCamera(videoDevices[0]?.deviceId);
-      }
-    }
-
-    cameraSelect.addEventListener('change', ()=>{
-      const id = cameraSelect.value;
-      localStorage.setItem('cameraId', id);
-      initCamera(id);
-    });
-
-    // wake lock
     let wakeLock = null;
     async function requestWakeLock() {
       try {
         if ('wakeLock' in navigator) {
           wakeLock = await navigator.wakeLock.request('screen');
-          wakeLock.addEventListener('release', ()=>{ wakeLock=null; });
+          wakeLock.addEventListener('release', () => { wakeLock = null; });
         }
-      } catch(e){ console.warn('Wake Lock unavailable', e); }
+      } catch (e) {
+        console.warn('Wake Lock not available', e);
+      }
     }
 
-    window.addEventListener('resize', ()=>applyTransform());
+    window.addEventListener('resize', () => applyTransform());
 
     updateOverlay();
-    populateCameras();
+    initCamera();
     requestWakeLock();
-    
-// Register service worker for PWA/offline caching
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js')
-    .then(() => console.log('Service Worker registered'))
-    .catch(err => console.error('Service Worker registration failed:', err));
-}
   </script>
 </body>
 </html>
-
