@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Classroom Visualiser (0° / 180°)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      background: black;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
+
+    #viewport {
+      position: fixed;
+      inset: 0;
+      background: black;
+      overflow: hidden;
+    }
+
+    #videoWrapper {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform-origin: center center;
+      will-change: transform, width, height;
+      z-index: 1;
+    }
+
+    video {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: black;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
+      background: rgba(255,105,180,0);
+    }
+
+    #control-toggle {
+      position: fixed;
+      right: 15px;
+      bottom: 15px;
+      z-index: 30;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 7px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    #controls {
+      position: fixed;
+      right: 15px;
+      bottom: 60px;
+      z-index: 30;
+      background: rgba(0,0,0,0.75);
+      color: white;
+      padding: 12px;
+      border-radius: 10px;
+      display: none;
+      width: 220px;
+      box-sizing: border-box;
+      font-size: 13px;
+    }
+
+    #controls label { display: block; margin: 8px 0 4px; }
+    #controls input[type="range"], #controls input[type="color"], #controls select {
+      width: 100%;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="viewport">
+    <div id="videoWrapper">
+      <video id="video" autoplay playsinline muted></video>
+    </div>
+  </div>
+
+  <div id="overlay" aria-hidden="true"></div>
+
+  <div id="control-toggle">▲</div>
+  <div id="controls" aria-hidden="true">
+    <label for="tintColor">Tint colour</label>
+    <input type="color" id="tintColor" value="#ff69b4">
+
+    <label for="tintOpacity">Tint opacity</label>
+    <input type="range" id="tintOpacity" min="0" max="100" value="0">
+
+    <label for="rotation">Rotate</label>
+    <select id="rotation">
+      <option value="0">0°</option>
+      <option value="180">180°</option>
+    </select>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const wrapper = document.getElementById('videoWrapper');
+    const overlay = document.getElementById('overlay');
+    const toggleBtn = document.getElementById('control-toggle');
+    const controls = document.getElementById('controls');
+    const tintColor = document.getElementById('tintColor');
+    const tintOpacity = document.getElementById('tintOpacity');
+    const rotation = document.getElementById('rotation');
+
+    const savedColor = localStorage.getItem('tintColor');
+    const savedOpacity = localStorage.getItem('tintOpacity');
+    const savedRotation = localStorage.getItem('rotation');
+    if (savedColor) tintColor.value = savedColor;
+    if (savedOpacity) tintOpacity.value = savedOpacity;
+    if (savedRotation) rotation.value = savedRotation;
+
+    function hexToRgba(hex, alpha) {
+      if (!hex) return `rgba(255,105,180,${alpha})`;
+      const h = hex.replace('#','');
+      if (h.length === 3) {
+        const r = parseInt(h[0]+h[0],16);
+        const g = parseInt(h[1]+h[1],16);
+        const b = parseInt(h[2]+h[2],16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      } else {
+        const r = parseInt(h.slice(0,2),16);
+        const g = parseInt(h.slice(2,4),16);
+        const b = parseInt(h.slice(4,6),16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+    }
+
+    function updateOverlay() {
+      const a = (parseInt(tintOpacity.value, 10) || 0) / 100;
+      overlay.style.background = hexToRgba(tintColor.value, a);
+    }
+
+    tintColor.addEventListener('input', () => {
+      localStorage.setItem('tintColor', tintColor.value);
+      updateOverlay();
+    });
+    tintOpacity.addEventListener('input', () => {
+      localStorage.setItem('tintOpacity', tintOpacity.value);
+      updateOverlay();
+    });
+
+    toggleBtn.addEventListener('click', () => {
+      const showing = controls.style.display !== 'none';
+      controls.style.display = showing ? 'none' : 'block';
+      controls.setAttribute('aria-hidden', showing ? 'true' : 'false');
+      toggleBtn.textContent = showing ? '▲' : '▼';
+    });
+
+    function applyTransform() {
+      const deg = parseInt(rotation.value, 10) || 0;
+      let vw = video.videoWidth || 0;
+      let vh = video.videoHeight || 0;
+
+      if ((!vw || !vh) && video.srcObject && video.srcObject.getVideoTracks) {
+        try {
+          const s = video.srcObject.getVideoTracks()[0].getSettings();
+          if (s && s.width && s.height) {
+            vw = s.width;
+            vh = s.height;
+          }
+        } catch (e) {}
+      }
+
+      if (!vw || !vh) return;
+
+      wrapper.style.width = vw + 'px';
+      wrapper.style.height = vh + 'px';
+
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+
+      const scale = Math.max(W / vw, H / vh);
+
+      wrapper.style.transform = `translate(-50%,-50%) rotate(${deg}deg) scale(${scale})`;
+    }
+
+    rotation.addEventListener('change', () => {
+      localStorage.setItem('rotation', rotation.value);
+      applyTransform();
+    });
+
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 3840 }, height: { ideal: 2160 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        video.addEventListener('loadedmetadata', () => {
+          video.play().catch(()=>{});
+          applyTransform();
+        }, { once: true });
+      } catch (err) {
+        console.error('Camera error', err);
+        alert('Error accessing camera: ' + (err && err.name ? err.name : err));
+      }
+    }
+
+    let wakeLock = null;
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => { wakeLock = null; });
+        }
+      } catch (e) {
+        console.warn('Wake Lock not available', e);
+      }
+    }
+
+    window.addEventListener('resize', () => applyTransform());
+
+    updateOverlay();
+
+    initCamera();
+    requestWakeLock();
+
+    // Register service worker for offline support
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('Service worker registered'))
+        .catch(err => console.warn('Service worker failed', err));
+    }
+  </script>
+</body>
+</html>
