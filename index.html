@@ -6,80 +6,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="manifest" href="manifest.json" />
   <style>
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      background: black;
-      overflow: hidden;
-      font-family: sans-serif;
-    }
-
-    #viewport {
-      position: fixed;
-      inset: 0;
-      background: black;
-      overflow: hidden;
-    }
-
-    #videoWrapper {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform-origin: center center;
-      will-change: transform, width, height;
-      z-index: 1;
-    }
-
-    video {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background: black;
-    }
-
-    #overlay {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 20;
-      background: rgba(255,105,180,0);
-    }
-
-    #control-toggle {
-      position: fixed;
-      right: 15px;
-      bottom: 15px;
-      z-index: 30;
-      background: rgba(0,0,0,0.6);
-      color: white;
-      padding: 7px 10px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-
-    #controls {
-      position: fixed;
-      right: 15px;
-      bottom: 60px;
-      z-index: 30;
-      background: rgba(0,0,0,0.75);
-      color: white;
-      padding: 12px;
-      border-radius: 10px;
-      display: none;
-      width: 220px;
-      box-sizing: border-box;
-      font-size: 13px;
-    }
-
+    html, body { height: 100%; width: 100%; margin: 0; padding: 0; background: black; overflow: hidden; font-family: sans-serif; }
+    #viewport { position: fixed; inset: 0; background: black; overflow: hidden; }
+    #videoWrapper { position: absolute; left: 50%; top: 50%; transform-origin: center center; will-change: transform, width, height; z-index: 1; }
+    video { display: block; width: 100%; height: 100%; object-fit: cover; background: black; }
+    #overlay { position: fixed; inset: 0; pointer-events: none; z-index: 20; background: rgba(255,105,180,0); }
+    #control-toggle { position: fixed; right: 15px; bottom: 15px; z-index: 30; background: rgba(0,0,0,0.6); color: white; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    #controls { position: fixed; right: 15px; bottom: 60px; z-index: 30; background: rgba(0,0,0,0.75); color: white; padding: 12px; border-radius: 10px; display: none; width: 220px; box-sizing: border-box; font-size: 13px; }
     #controls label { display: block; margin: 8px 0 4px; }
-    #controls input[type="range"],
-    #controls input[type="color"],
-    #controls select { width: 100%; box-sizing: border-box; }
+    #controls input[type="range"], #controls input[type="color"], #controls select { width: 100%; box-sizing: border-box; }
   </style>
 </head>
 <body>
@@ -95,6 +30,12 @@
   <div id="controls" aria-hidden="true">
     <label for="cameraSelect">Camera</label>
     <select id="cameraSelect"></select>
+
+    <label for="qualitySelect">Quality</label>
+    <select id="qualitySelect">
+      <option value="smooth">Smooth (1080p)</option>
+      <option value="max">Max resolution</option>
+    </select>
 
     <label for="tintColor">Tint colour</label>
     <input type="color" id="tintColor" value="#ff69b4">
@@ -119,15 +60,18 @@
     const tintOpacity = document.getElementById('tintOpacity');
     const rotation = document.getElementById('rotation');
     const cameraSelect = document.getElementById('cameraSelect');
+    const qualitySelect = document.getElementById('qualitySelect');
 
-    // Restore saved settings
     const savedColor = localStorage.getItem('tintColor');
     const savedOpacity = localStorage.getItem('tintOpacity');
     const savedRotation = localStorage.getItem('rotation');
     const savedCameraId = localStorage.getItem('cameraId');
+    const savedQuality = localStorage.getItem('qualityMode');
+
     if (savedColor) tintColor.value = savedColor;
     if (savedOpacity) tintOpacity.value = savedOpacity;
     if (savedRotation) rotation.value = savedRotation;
+    if (savedQuality) qualitySelect.value = savedQuality;
 
     function hexToRgba(hex, alpha) {
       if (!hex) return `rgba(255,105,180,${alpha})`;
@@ -143,14 +87,8 @@
       overlay.style.background = hexToRgba(tintColor.value, a);
     }
 
-    tintColor.addEventListener('input', () => {
-      localStorage.setItem('tintColor', tintColor.value);
-      updateOverlay();
-    });
-    tintOpacity.addEventListener('input', () => {
-      localStorage.setItem('tintOpacity', tintOpacity.value);
-      updateOverlay();
-    });
+    tintColor.addEventListener('input', () => { localStorage.setItem('tintColor', tintColor.value); updateOverlay(); });
+    tintOpacity.addEventListener('input', () => { localStorage.setItem('tintOpacity', tintOpacity.value); updateOverlay(); });
 
     toggleBtn.addEventListener('click', () => {
       const showing = controls.style.display !== 'none';
@@ -160,65 +98,51 @@
     });
 
     function applyTransform() {
-      const deg = parseInt(rotation.value,10)||0;
+      const deg = parseInt(rotation.value, 10) || 0;
       let vw = video.videoWidth || 0;
       let vh = video.videoHeight || 0;
-
-      if ((!vw||!vh) && video.srcObject && video.srcObject.getVideoTracks) {
-        try {
-          const s = video.srcObject.getVideoTracks()[0].getSettings();
-          if (s && s.width && s.height) { vw = s.width; vh = s.height; }
-        } catch(e){ }
+      if ((!vw || !vh) && video.srcObject && video.srcObject.getVideoTracks) {
+        try { const s = video.srcObject.getVideoTracks()[0].getSettings(); if(s.width && s.height){ vw=s.width; vh=s.height; } } catch{}
       }
       if (!vw || !vh) return;
-
       wrapper.style.width = vw+'px';
       wrapper.style.height = vh+'px';
-
       const W = window.innerWidth;
       const H = window.innerHeight;
-      const scale = Math.max(W/vw, H/vh);
-      wrapper.style.transform = `translate(-50%,-50%) rotate(${deg}deg) scale(${scale})`;
+      wrapper.style.transform = `translate(-50%,-50%) rotate(${deg}deg) scale(${Math.max(W/vw,H/vh)})`;
     }
 
-    rotation.addEventListener('change', () => {
-      localStorage.setItem('rotation', rotation.value);
-      applyTransform();
-    });
+    rotation.addEventListener('change', () => { localStorage.setItem('rotation', rotation.value); applyTransform(); });
+
+    qualitySelect.addEventListener('change', () => { localStorage.setItem('qualityMode', qualitySelect.value); if(cameraSelect.value) initCamera(cameraSelect.value); });
 
     async function initCamera(deviceId) {
       try {
+        const quality = qualitySelect.value;
+        let constraints = quality==='smooth'
+          ? { width:{ideal:1920}, height:{ideal:1080}, frameRate:{ideal:30} }
+          : { width:{ideal:9999}, height:{ideal:9999}, frameRate:{ideal:30} };
+
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: deviceId ? { exact: deviceId } : undefined, width:{ideal:3840}, height:{ideal:2160} },
+          video: { deviceId: deviceId?{exact:deviceId}:undefined, ...constraints },
           audio: false
         });
+
         video.srcObject = stream;
-        video.addEventListener('loadedmetadata', () => {
-          video.play().catch(()=>{});
-          applyTransform();
-        }, { once:true });
-      } catch(err) {
-        console.error('Camera error', err);
-        alert('Error accessing camera: ' + (err && err.name ? err.name : err));
-      }
+        const track = stream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        console.log(`Camera: ${settings.width}x${settings.height} @ ${settings.frameRate||'unknown'}fps`);
+        video.addEventListener('loadedmetadata', ()=>{ video.play().catch(()=>{}); applyTransform(); }, {once:true});
+      } catch(err){ console.error('Camera error', err); alert('Error accessing camera: '+(err&&err.name?err.name:err)); }
     }
 
     async function populateCameras() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(d=>d.kind==='videoinput');
       cameraSelect.innerHTML = '';
-      videoDevices.forEach((d,i)=>{
-        const opt = document.createElement('option');
-        opt.value = d.deviceId;
-        opt.text = d.label||`Camera ${i+1}`;
-        cameraSelect.appendChild(opt);
-      });
-      if (savedCameraId && videoDevices.some(d=>d.deviceId===savedCameraId)) {
-        cameraSelect.value = savedCameraId;
-        initCamera(savedCameraId);
-      } else {
-        initCamera(videoDevices[0]?.deviceId);
-      }
+      videoDevices.forEach((d,i)=>{ const opt=document.createElement('option'); opt.value=d.deviceId; opt.text=d.label||`Camera ${i+1}`; cameraSelect.appendChild(opt); });
+      let selected = savedCameraId && videoDevices.some(d=>d.deviceId===savedCameraId)?savedCameraId:videoDevices[0]?.deviceId;
+      if(selected){ cameraSelect.value = selected; initCamera(selected); }
     }
 
     cameraSelect.addEventListener('change', ()=>{
@@ -229,20 +153,20 @@
 
     // wake lock
     let wakeLock = null;
-    async function requestWakeLock() {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-          wakeLock.addEventListener('release', ()=>{ wakeLock=null; });
-        }
-      } catch(e){ console.warn('Wake Lock unavailable', e); }
-    }
+    async function requestWakeLock() { try { if('wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', ()=>{wakeLock=null;}); } } catch(e){console.warn('Wake Lock unavailable', e);} }
 
     window.addEventListener('resize', ()=>applyTransform());
 
     updateOverlay();
     populateCameras();
     requestWakeLock();
+
+    // Register service worker for offline
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg=>console.log('Service Worker registered:', reg.scope))
+        .catch(err=>console.warn('Service Worker registration failed:', err));
+    }
   </script>
 </body>
 </html>
