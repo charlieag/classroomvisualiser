@@ -6,22 +6,78 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="manifest" href="manifest.json" />
   <style>
-    html, body { height: 100%; width: 100%; margin: 0; padding: 0; background: black; overflow: hidden; font-family: sans-serif; }
-    #viewport { position: fixed; inset: 0; background: black; overflow: hidden; }
-    #videoWrapper { position: absolute; left: 50%; top: 50%; transform-origin: center center; will-change: transform, width, height; z-index: 1; }
-    video { display: block; width: 100%; height: 100%; object-fit: cover; background: black; }
-    #overlay { position: fixed; inset: 0; pointer-events: none; z-index: 20; background: rgba(255,105,180,0); }
-    #control-toggle { position: fixed; right: 15px; bottom: 15px; z-index: 30; background: rgba(0,0,0,0.6); color: white; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
-    #controls { position: fixed; right: 15px; bottom: 60px; z-index: 30; background: rgba(0,0,0,0.75); color: white; padding: 12px; border-radius: 10px; display: none; width: 220px; box-sizing: border-box; font-size: 13px; }
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      background: black;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
+
+    #viewport {
+      position: fixed;
+      inset: 0;
+      background: black;
+      overflow: hidden;
+    }
+
+    #videoCanvas {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform-origin: center center;
+      will-change: transform, width, height;
+      z-index: 1;
+      background: black;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
+      background: rgba(255,105,180,0);
+    }
+
+    #control-toggle {
+      position: fixed;
+      right: 15px;
+      bottom: 15px;
+      z-index: 30;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 7px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    #controls {
+      position: fixed;
+      right: 15px;
+      bottom: 60px;
+      z-index: 30;
+      background: rgba(0,0,0,0.75);
+      color: white;
+      padding: 12px;
+      border-radius: 10px;
+      display: none;
+      width: 220px;
+      box-sizing: border-box;
+      font-size: 13px;
+    }
+
     #controls label { display: block; margin: 8px 0 4px; }
-    #controls input[type="range"], #controls input[type="color"], #controls select { width: 100%; box-sizing: border-box; }
+    #controls input[type="range"],
+    #controls input[type="color"],
+    #controls select { width: 100%; box-sizing: border-box; }
   </style>
 </head>
 <body>
   <div id="viewport">
-    <div id="videoWrapper">
-      <video id="video" autoplay playsinline muted></video>
-    </div>
+    <canvas id="videoCanvas"></canvas>
   </div>
 
   <div id="overlay" aria-hidden="true"></div>
@@ -30,12 +86,6 @@
   <div id="controls" aria-hidden="true">
     <label for="cameraSelect">Camera</label>
     <select id="cameraSelect"></select>
-
-    <label for="qualitySelect">Quality</label>
-    <select id="qualitySelect">
-      <option value="smooth">Smooth (1080p)</option>
-      <option value="max">Max resolution</option>
-    </select>
 
     <label for="tintColor">Tint colour</label>
     <input type="color" id="tintColor" value="#ff69b4">
@@ -46,13 +96,15 @@
     <label for="rotation">Rotate</label>
     <select id="rotation">
       <option value="0">0°</option>
+      <option value="90">90°</option>
       <option value="180">180°</option>
+      <option value="270">270°</option>
     </select>
   </div>
 
   <script>
-    const video = document.getElementById('video');
-    const wrapper = document.getElementById('videoWrapper');
+    const canvas = document.getElementById('videoCanvas');
+    const ctx = canvas.getContext('2d');
     const overlay = document.getElementById('overlay');
     const toggleBtn = document.getElementById('control-toggle');
     const controls = document.getElementById('controls');
@@ -60,18 +112,20 @@
     const tintOpacity = document.getElementById('tintOpacity');
     const rotation = document.getElementById('rotation');
     const cameraSelect = document.getElementById('cameraSelect');
-    const qualitySelect = document.getElementById('qualitySelect');
 
+    let video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true;
+
+    // Restore saved settings
     const savedColor = localStorage.getItem('tintColor');
     const savedOpacity = localStorage.getItem('tintOpacity');
     const savedRotation = localStorage.getItem('rotation');
     const savedCameraId = localStorage.getItem('cameraId');
-    const savedQuality = localStorage.getItem('qualityMode');
-
     if (savedColor) tintColor.value = savedColor;
     if (savedOpacity) tintOpacity.value = savedOpacity;
     if (savedRotation) rotation.value = savedRotation;
-    if (savedQuality) qualitySelect.value = savedQuality;
 
     function hexToRgba(hex, alpha) {
       if (!hex) return `rgba(255,105,180,${alpha})`;
@@ -87,8 +141,14 @@
       overlay.style.background = hexToRgba(tintColor.value, a);
     }
 
-    tintColor.addEventListener('input', () => { localStorage.setItem('tintColor', tintColor.value); updateOverlay(); });
-    tintOpacity.addEventListener('input', () => { localStorage.setItem('tintOpacity', tintOpacity.value); updateOverlay(); });
+    tintColor.addEventListener('input', () => {
+      localStorage.setItem('tintColor', tintColor.value);
+      updateOverlay();
+    });
+    tintOpacity.addEventListener('input', () => {
+      localStorage.setItem('tintOpacity', tintOpacity.value);
+      updateOverlay();
+    });
 
     toggleBtn.addEventListener('click', () => {
       const showing = controls.style.display !== 'none';
@@ -97,52 +157,48 @@
       toggleBtn.textContent = showing ? '▲' : '▼';
     });
 
-    function applyTransform() {
-      const deg = parseInt(rotation.value, 10) || 0;
-      let vw = video.videoWidth || 0;
-      let vh = video.videoHeight || 0;
-      if ((!vw || !vh) && video.srcObject && video.srcObject.getVideoTracks) {
-        try { const s = video.srcObject.getVideoTracks()[0].getSettings(); if(s.width && s.height){ vw=s.width; vh=s.height; } } catch{}
-      }
-      if (!vw || !vh) return;
-      wrapper.style.width = vw+'px';
-      wrapper.style.height = vh+'px';
-      const W = window.innerWidth;
-      const H = window.innerHeight;
-      wrapper.style.transform = `translate(-50%,-50%) rotate(${deg}deg) scale(${Math.max(W/vw,H/vh)})`;
-    }
-
-    rotation.addEventListener('change', () => { localStorage.setItem('rotation', rotation.value); applyTransform(); });
-
-    qualitySelect.addEventListener('change', () => { localStorage.setItem('qualityMode', qualitySelect.value); if(cameraSelect.value) initCamera(cameraSelect.value); });
+    rotation.addEventListener('change', () => {
+      localStorage.setItem('rotation', rotation.value);
+      updateCanvasSize();
+    });
 
     async function initCamera(deviceId) {
       try {
-        const quality = qualitySelect.value;
-        let constraints = quality==='smooth'
-          ? { width:{ideal:1920}, height:{ideal:1080}, frameRate:{ideal:30} }
-          : { width:{ideal:9999}, height:{ideal:9999}, frameRate:{ideal:30} };
-
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: deviceId?{exact:deviceId}:undefined, ...constraints },
+          video: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            width: { ideal: 3840 },
+            height: { ideal: 2160 },
+            frameRate: { ideal: 30 }
+          },
           audio: false
         });
-
         video.srcObject = stream;
         const track = stream.getVideoTracks()[0];
         const settings = track.getSettings();
-        console.log(`Camera: ${settings.width}x${settings.height} @ ${settings.frameRate||'unknown'}fps`);
-        video.addEventListener('loadedmetadata', ()=>{ video.play().catch(()=>{}); applyTransform(); }, {once:true});
-      } catch(err){ console.error('Camera error', err); alert('Error accessing camera: '+(err&&err.name?err.name:err)); }
+        console.log(`Camera chosen: ${settings.width}x${settings.height} @ ${settings.frameRate||'unknown'}fps`);
+      } catch(err) {
+        console.error('Camera error', err);
+        alert('Error accessing camera: ' + (err && err.name ? err.name : err));
+      }
     }
 
     async function populateCameras() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(d=>d.kind==='videoinput');
       cameraSelect.innerHTML = '';
-      videoDevices.forEach((d,i)=>{ const opt=document.createElement('option'); opt.value=d.deviceId; opt.text=d.label||`Camera ${i+1}`; cameraSelect.appendChild(opt); });
-      let selected = savedCameraId && videoDevices.some(d=>d.deviceId===savedCameraId)?savedCameraId:videoDevices[0]?.deviceId;
-      if(selected){ cameraSelect.value = selected; initCamera(selected); }
+      videoDevices.forEach((d,i)=>{
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.text = d.label || `Camera ${i+1}`;
+        cameraSelect.appendChild(opt);
+      });
+      if (savedCameraId && videoDevices.some(d=>d.deviceId===savedCameraId)) {
+        cameraSelect.value = savedCameraId;
+        initCamera(savedCameraId);
+      } else {
+        initCamera(videoDevices[0]?.deviceId);
+      }
     }
 
     cameraSelect.addEventListener('change', ()=>{
@@ -151,22 +207,72 @@
       initCamera(id);
     });
 
-    // wake lock
-    let wakeLock = null;
-    async function requestWakeLock() { try { if('wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', ()=>{wakeLock=null;}); } } catch(e){console.warn('Wake Lock unavailable', e);} }
+    function updateCanvasSize() {
+      if (!video.videoWidth || !video.videoHeight) return;
 
-    window.addEventListener('resize', ()=>applyTransform());
+      const deg = parseInt(rotation.value,10)||0;
+      let videoW = video.videoWidth;
+      let videoH = video.videoHeight;
+      let W = window.innerWidth;
+      let H = window.innerHeight;
+
+      // swap dimensions for 90/270 rotation
+      if (deg === 90 || deg === 270) {
+        [videoW, videoH] = [videoH, videoW];
+      }
+
+      // calculate scale to cover viewport
+      const scale = Math.max(W/videoW, H/videoH);
+      canvas.width = videoW;
+      canvas.height = videoH;
+      canvas.style.transform = `translate(-50%,-50%) rotate(${deg}deg) scale(${scale})`;
+    }
+
+    function drawFrame() {
+      if (!video.videoWidth || !video.videoHeight) {
+        requestAnimationFrame(drawFrame);
+        return;
+      }
+      const deg = parseInt(rotation.value,10)||0;
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+
+      ctx.save();
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      // Translate to center
+      ctx.translate(vw/2, vh/2);
+      ctx.rotate(deg*Math.PI/180);
+
+      // For 90/270, swap width/height
+      let drawW = vw;
+      let drawH = vh;
+      if (deg === 90 || deg === 270) [drawW, drawH] = [vh, vw];
+
+      ctx.drawImage(video, -vw/2, -vh/2, vw, vh);
+      ctx.restore();
+
+      requestAnimationFrame(drawFrame);
+    }
+
+    window.addEventListener('resize', updateCanvasSize);
 
     updateOverlay();
     populateCameras();
-    requestWakeLock();
+    updateCanvasSize();
+    requestAnimationFrame(drawFrame);
 
-    // Register service worker for offline
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then(reg=>console.log('Service Worker registered:', reg.scope))
-        .catch(err=>console.warn('Service Worker registration failed:', err));
+    // Wake lock
+    let wakeLock = null;
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', ()=>{ wakeLock=null; });
+        }
+      } catch(e){ console.warn('Wake Lock unavailable', e); }
     }
+    requestWakeLock();
   </script>
 </body>
 </html>
