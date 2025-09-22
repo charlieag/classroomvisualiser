@@ -77,10 +77,17 @@
     function hexToRgba(hex, alpha) {
       if (!hex) return `rgba(255,105,180,${alpha})`;
       const h = hex.replace('#','');
-      const r = parseInt(h.length===3 ? h[0]+h[0] : h.slice(0,2),16);
-      const g = parseInt(h.length===3 ? h[1]+h[1] : h.slice(2,4),16);
-      const b = parseInt(h.length===3 ? h[2]+h[2] : h.slice(4,6),16);
-      return `rgba(${r},${g},${b},${alpha})`;
+      if (h.length === 3) {
+        const r = parseInt(h[0]+h[0],16);
+        const g = parseInt(h[1]+h[1],16);
+        const b = parseInt(h[2]+h[2],16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      } else {
+        const r = parseInt(h.slice(0,2),16);
+        const g = parseInt(h.slice(2,4),16);
+        const b = parseInt(h.slice(4,6),16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
     }
 
     function updateOverlay() {
@@ -114,7 +121,6 @@
     }
 
     rotation.addEventListener('change', () => { localStorage.setItem('rotation', rotation.value); applyTransform(); });
-
     qualitySelect.addEventListener('change', () => { localStorage.setItem('qualityMode', qualitySelect.value); if(cameraSelect.value) initCamera(cameraSelect.value); });
 
     async function initCamera(deviceId) {
@@ -137,20 +143,39 @@
       } catch(err){ console.error('Camera error', err); alert('Error accessing camera: '+(err&&err.name?err.name:err)); }
     }
 
+    // ✅ Updated populateCameras
     async function populateCameras() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d=>d.kind==='videoinput');
-      cameraSelect.innerHTML = '';
-      videoDevices.forEach((d,i)=>{ const opt=document.createElement('option'); opt.value=d.deviceId; opt.text=d.label||`Camera ${i+1}`; cameraSelect.appendChild(opt); });
-      let selected = savedCameraId && videoDevices.some(d=>d.deviceId===savedCameraId)?savedCameraId:videoDevices[0]?.deviceId;
-      if(selected){ cameraSelect.value = selected; initCamera(selected); }
+      try {
+        // Force permission request
+        await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+        cameraSelect.innerHTML = '';
+        videoDevices.forEach((d, i) => {
+          const opt = document.createElement('option');
+          opt.value = d.deviceId;
+          opt.text = d.label || `Camera ${i+1}`;
+          cameraSelect.appendChild(opt);
+        });
+
+        let selected =
+          savedCameraId && videoDevices.some(d => d.deviceId === savedCameraId)
+            ? savedCameraId
+            : videoDevices[0]?.deviceId;
+
+        if(selected) {
+          cameraSelect.value = selected;
+          initCamera(selected);
+        }
+      } catch(err) {
+        console.error("Camera access denied or unavailable:", err);
+        alert("Please allow camera access to use this app.");
+      }
     }
 
-    cameraSelect.addEventListener('change', ()=>{
-      const id = cameraSelect.value;
-      localStorage.setItem('cameraId', id);
-      initCamera(id);
-    });
+    cameraSelect.addEventListener('change', ()=>{ const id = cameraSelect.value; localStorage.setItem('cameraId', id); initCamera(id); });
 
     // wake lock
     let wakeLock = null;
@@ -162,13 +187,10 @@
     populateCameras();
     requestWakeLock();
 
-    // Register service worker for offline
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then(reg=>console.log('Service Worker registered:', reg.scope))
-        .catch(err=>console.warn('Service Worker registration failed:', err));
+    // Service Worker
+    if('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(reg=>console.log('Service Worker registered:', reg.scope)).catch(err=>console.warn('Service Worker registration failed:', err));
     }
   </script>
 </body>
 </html>
-
