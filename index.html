@@ -65,6 +65,7 @@
     const cameraSelect = document.getElementById('cameraSelect');
     const qualitySelect = document.getElementById('qualitySelect');
 
+    // restore settings
     const savedColor = localStorage.getItem('tintColor');
     const savedOpacity = localStorage.getItem('tintOpacity');
     const savedRotation = localStorage.getItem('rotation');
@@ -77,7 +78,6 @@
     if(savedQuality) qualitySelect.value = savedQuality;
 
     function hexToRgba(hex, alpha) {
-      if(!hex) return `rgba(255,105,180,${alpha})`;
       const h = hex.replace('#','');
       const r = parseInt(h.length===3?h[0]+h[0]:h.slice(0,2),16);
       const g = parseInt(h.length===3?h[1]+h[1]:h.slice(2,4),16);
@@ -102,55 +102,44 @@
 
     function applyTransform(){
       const deg = parseInt(rotation.value,10)||0;
-      let vw = video.videoWidth||0;
-      let vh = video.videoHeight||0;
-      if((!vw||!vh)&&video.srcObject&&video.srcObject.getVideoTracks){
-        try{ const s=video.srcObject.getVideoTracks()[0].getSettings(); if(s.width&&s.height){ vw=s.width; vh=s.height; } }catch{}
-      }
-      if(!vw||!vh) return;
+      const vw = video.videoWidth || 1920;
+      const vh = video.videoHeight || 1080;
       wrapper.style.width = vw+'px';
       wrapper.style.height = vh+'px';
       const W = window.innerWidth;
       const H = window.innerHeight;
       wrapper.style.transform = `translate(-50%,-50%) rotate(${deg}deg) scale(${Math.max(W/vw,H/vh)})`;
     }
-
     rotation.addEventListener('change', ()=>{ localStorage.setItem('rotation', rotation.value); applyTransform(); });
 
     qualitySelect.addEventListener('change', ()=>{ localStorage.setItem('qualityMode', qualitySelect.value); if(cameraSelect.value) initCamera(cameraSelect.value); });
 
     async function initCamera(deviceId){
       try{
-        let stream;
         const quality = qualitySelect.value;
-
+        let constraints;
         if(quality==='smooth'){
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: deviceId?{exact:deviceId}:undefined, width:{exact:1920}, height:{exact:1080}, frameRate:{ideal:30} },
-            audio:false
-          });
+          constraints = { video: { deviceId: deviceId?{exact:deviceId}:undefined, width:{ideal:1920}, height:{ideal:1080}, frameRate:{ideal:30} } };
         } else {
-          // max mode: pick highest supported resolution
-          const testStream = await navigator.mediaDevices.getUserMedia({ video: deviceId?{exact:deviceId}:undefined });
-          const track = testStream.getVideoTracks()[0];
-          const caps = track.getCapabilities();
-          const width = caps.width?.max || 1920;
-          const height = caps.height?.max || 1080;
-          track.stop(); // release temporary stream
-
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: deviceId?{exact:deviceId}:undefined, width:{exact:width}, height:{exact:height}, frameRate:{ideal:30} },
-            audio:false
-          });
+          constraints = { video: { deviceId: deviceId?{exact:deviceId}:undefined, width:{ideal:9999}, height:{ideal:9999} } };
         }
-
+        console.log("Requesting camera with constraints:", constraints);
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
         const track = stream.getVideoTracks()[0];
         const settings = track.getSettings();
-        console.log(`Camera: ${settings.width}x${settings.height} @ ${settings.frameRate||'unknown'}fps`);
-
-        video.addEventListener('loadedmetadata', ()=>{ video.play().catch(()=>{}); applyTransform(); }, {once:true});
-      }catch(err){ console.error('Camera error',err); alert('Error accessing camera: '+(err&&err.name?err.name:err)); }
+        console.log(`Camera started: ${settings.width}x${settings.height} @ ${settings.frameRate||'unknown'}fps`);
+        video.addEventListener('loadedmetadata', ()=>{ applyTransform(); }, {once:true});
+      }catch(err){
+        console.error("Camera error:", err);
+        if(err.name==="NotAllowedError"){
+          alert("Camera access was blocked. Please allow camera permissions in your browser settings.");
+        } else if(err.name==="NotFoundError"){
+          alert("No camera found. Please connect a camera and reload.");
+        } else {
+          alert("Error accessing camera: "+err.message);
+        }
+      }
     }
 
     async function populateCameras(){
@@ -166,35 +155,29 @@
       const selected = savedCameraId&&videoDevices.some(d=>d.deviceId===savedCameraId)?savedCameraId:videoDevices[0]?.deviceId;
       if(selected){ cameraSelect.value=selected; initCamera(selected); }
     }
+    cameraSelect.addEventListener('change', ()=>{ const id=cameraSelect.value; localStorage.setItem('cameraId',id); initCamera(id); });
 
-    cameraSelect.addEventListener('change', ()=>{
-      const id = cameraSelect.value;
-      localStorage.setItem('cameraId',id);
-      initCamera(id);
-    });
-
-    // wake lock
-    let wakeLock = null;
-    async function requestWakeLock(){ 
-      try{ 
-        if('wakeLock' in navigator){ 
-          wakeLock = await navigator.wakeLock.request('screen'); 
-          wakeLock.addEventListener('release', ()=>{wakeLock=null;}); 
-        } 
-      } catch(e){ console.warn('Wake Lock unavailable',e); } 
-    }
-
-    window.addEventListener('resize', ()=>applyTransform());
+    // Always request permissions on load
+    navigator.mediaDevices.getUserMedia({video:true})
+      .then(stream=>{ stream.getTracks().forEach(t=>t.stop()); populateCameras(); })
+      .catch(err=>{
+        console.error("Initial permission request failed:", err);
+        if(err.name==="NotAllowedError"){
+          alert("You must allow camera access for this app to work. Please check browser settings.");
+        }
+      });
 
     updateOverlay();
-    populateCameras();
-    requestWakeLock();
+    window.addEventListener('resize', applyTransform);
 
-    // Register service worker for offline
-    if('serviceWorker' in navigator){
-      navigator.serviceWorker.register('sw.js')
-        .then(reg=>console.log('Service Worker registered:', reg.scope))
-        .catch(err=>console.warn('Service Worker registration failed:',err));
+    // Wake lock
+    if("wakeLock" in navigator){ navigator.wakeLock.request("screen").catch(e=>console.warn("WakeLock error",e)); }
+
+    // Service Worker
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.register("sw.js")
+        .then(reg=>console.log("Service Worker registered:", reg.scope))
+        .catch(err=>console.warn("SW registration failed:",err));
     }
   </script>
 </body>
